@@ -6,11 +6,16 @@ import (
 )
 
 type Screen interface {
-	Bitmap
+	AllocImage(r image.Rectangle) Bitmap
+	Mouse() chan Mouse
+	Kbd() chan Kbd
+	Bounds() image.Rectangle
+	//Bitmap
 }
 type Bitmap interface {
-	draw.Image
-	SubImage(image.Rectangle) image.Image
+	Bounds() image.Rectangle
+	Draw(r image.Rectangle, src image.Image, sp image.Point, op draw.Op)
+	Flush(r image.Rectangle) error
 }
 type Mouse struct {
 	Button int
@@ -19,7 +24,7 @@ type Mouse struct {
 type Kbd int
 
 type Client struct {
-	W  Screen
+	W  Bitmap
 	M  <-chan Mouse
 	K  <-chan Kbd
 	CO chan<- string

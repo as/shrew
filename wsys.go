@@ -1,11 +1,15 @@
 package shrew
 
 import (
+	"fmt"
 	"image"
+	"image/draw"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/as/ui"
+	"golang.org/x/exp/shiny/screen"
 	"golang.org/x/mobile/event/key"
 	"golang.org/x/mobile/event/mouse"
 	"golang.org/x/mobile/event/paint"
@@ -28,7 +32,8 @@ func NewWsys() *Wsys {
 	w := &Wsys{
 		N: make(chan *Options),
 	}
-	w.W, w.K, w.M = ShinyClient()
+	w.W = ShinyClient()
+	w.M, w.K = w.W.Mouse(), w.W.Kbd()
 	go w.prog()
 	return w
 }
@@ -39,8 +44,10 @@ func (w *Wsys) newWindow(opt *Options) *Env {
 		close(opt.reply)
 		return nil
 	}
+	fmt.Println(opt.Bounds)
+	bmp := w.W.AllocImage(opt.Bounds)
 	e := &Env{
-		W: w.W.SubImage(opt.Bounds).(Bitmap),
+		W: bmp,
 		M: make(chan Mouse),
 		K: make(chan Kbd),
 	}
@@ -111,13 +118,113 @@ func (w *Wsys) NewClient(opt *Options) *Client {
 
 var dev *ui.Dev
 
-func ShinyClient() (Bitmap, <-chan Kbd, <-chan Mouse) {
+type ShinyBitmap struct {
+	sp      image.Point
+	size    image.Point
+	b       screen.Buffer
+	w       screen.Window
+	ctl     chan msg
+	wg      sync.WaitGroup
+	refresh chan msg
+	draw    chan msg
+}
+
+type msg struct {
+	kind   byte
+	r      image.Rectangle
+	src    image.Image
+	sp     image.Point
+	op     draw.Op
+	replyc chan error
+}
+
+func (s *ShinyBitmap) run() {
+	s.refresh = make(chan msg)
+	s.draw = make(chan msg)
+	s.ctl = make(chan msg)
+	go func() {
+		for v := range s.ctl {
+			if v.kind == 'd' {
+				s.draw <- v
+			} else if v.kind == 'f' {
+				s.refresh <- v
+			}
+			log.Println("invalid msg", v)
+		}
+	}()
+	for {
+		select {
+		case msg := <-s.refresh:
+			s.wg.Wait()
+			dp := msg.r.Min
+			r := msg.r.Sub(s.Bounds().Min)
+			s.w.Upload(dp, s.b, r)
+			close(msg.replyc)
+		case msg := <-s.draw:
+			s.wg.Add(1)
+			go func() {
+				defer s.wg.Done()
+				r := msg.r.Sub(s.Bounds().Min)
+				draw.Draw(s.b.RGBA(), r, msg.src, msg.sp, msg.op)
+			}()
+		}
+	}
+}
+
+func (s *ShinyBitmap) Bounds() image.Rectangle {
+	return s.b.Bounds().Add(s.sp)
+}
+func (s *ShinyBitmap) Draw(r image.Rectangle, src image.Image, sp image.Point, op draw.Op) {
+	s.ctl <- msg{
+		kind: 'd',
+		r:    r,
+		src:  src,
+		sp:   sp,
+		op:   op,
+	}
+}
+func (s *ShinyBitmap) Flush(r image.Rectangle) error {
+	ch := make(chan error)
+	s.ctl <- msg{
+		kind:   'f',
+		r:      r,
+		replyc: ch,
+	}
+	return <-ch
+}
+
+func (s *ShinyScreen) AllocImage(r image.Rectangle) Bitmap {
+	b := s.dev.NewBuffer(r.Size())
+	bmp := &ShinyBitmap{
+		sp:   r.Min,
+		size: r.Size(),
+		b:    b,
+		w:    s.dev.Window(),
+	}
+	go bmp.run()
+	return bmp
+}
+func (s *ShinyScreen) Kbd() chan Kbd           { return s.K }
+func (s *ShinyScreen) Mouse() chan Mouse       { return s.M }
+func (s *ShinyScreen) Bounds() image.Rectangle { return image.Rect(0, 0, 2500, 1400) }
+
+type ShinyScreen struct {
+	dev *ui.Dev
+	K   chan Kbd
+	M   chan Mouse
+}
+
+func ShinyClient() *ShinyScreen {
 	dev, err := ui.Init(nil)
 	println(err)
 	w := dev.Window()
-	b := dev.NewBuffer(image.Pt(2560, 1440))
 	K := make(chan Kbd)
 	M := make(chan Mouse)
+	sc := &ShinyScreen{
+		dev: dev,
+		K:   K,
+		M:   M,
+	}
 	mstate := Mouse{}
 	go func() {
 		for {
@@ -134,12 +241,10 @@ func ShinyClient() (Bitmap, <-chan Kbd, <-chan Mouse) {
 			case key.Event:
 				K <- Kbd(e.Rune)
 			case paint.Event:
-				w.Upload(b.Bounds().Min, b, b.Bounds())
-				w.Send(paint.Event{})
 			case interface{}:
 				println("unknown event")
 			}
 		}
 	}()
-	return Bitmap(b.RGBA()), K, M
+	return sc
 }

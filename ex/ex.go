@@ -6,12 +6,10 @@ import (
 	"image/color"
 	"image/draw"
 
-	"github.com/as/frame"
-	"github.com/as/frame/font"
-	"github.com/as/memdraw"
 	"github.com/as/shrew"
 )
 
+/*
 func FrameClient(c *shrew.Client) {
 	fr := frame.New(c.W.Bounds(), font.NewGoMono(12), c.W.(*image.RGBA), frame.A)
 	for {
@@ -26,7 +24,8 @@ func FrameClient(c *shrew.Client) {
 		}
 	}
 }
-
+*/
+/*
 func Spline(c *shrew.Client) {
 	r := image.NewUniform(color.RGBA{255, 0, 0, 255})
 	y := image.NewUniform(color.RGBA{255, 255, 0, 255})
@@ -35,13 +34,17 @@ func Spline(c *shrew.Client) {
 	fun := memdraw.Bezspline
 	bsp := func(color image.Image) {
 		fun(c.W, p[0], p[1], p[2], p[3], 1, 1, 4, color, image.ZP)
+		cum := image.ZR
 		for _, x := range p {
 			if color != b {
 				color = y
 			}
-			draw.Draw(c.W, image.Rect(-1, -1, 1, 1).Inset(-2).Add(x), color, image.ZP, draw.Src)
-			memdraw.Line(c.W, p[0], p[3], 10, image.White, image.ZP)
+			c.W.Draw(c.W, image.Rect(-1, -1, 1, 1).Inset(-2).Add(x), color, image.ZP, draw.Src)
+			cum := cum.Union(image.Rect(-1, -1, 1, 1).Inset(-2).Add(x))
+		//c.W.Flush(image.Rect(-1, -1, 1, 1).Inset(-2).Add(x))
+			//memdraw.Line(c.W, p[0], p[3], 10, image.White, image.ZP)
 		}
+		c.W.Flush(cum)
 	}
 	for {
 		select {
@@ -75,7 +78,7 @@ func Spline(c *shrew.Client) {
 		}
 	}
 }
-
+*/
 func SolidClient(c *shrew.Client) {
 	r, g, b := image.NewUniform(color.RGBA{255, 0, 0, 255}), image.NewUniform(color.RGBA{0, 255, 0, 255}), image.NewUniform(color.RGBA{0, 0, 255, 255})
 	x := image.White
@@ -93,24 +96,25 @@ func SolidClient(c *shrew.Client) {
 			default:
 				continue
 			}
-			draw.Draw(c.W, c.W.Bounds(), x, image.ZP, draw.Src)
+			c.W.Draw(c.W.Bounds(), x, image.ZP, draw.Src)
+			c.W.Flush(c.W.Bounds())
 		}
 	}
 }
 
 func main() {
 	wsys := shrew.NewWsys()
-	go Spline(wsys.NewClient(&shrew.Options{
-		Bounds: image.Rect(255, 255, 2560, 1440),
-	}))
+	//	go Spline(wsys.NewClient(&shrew.Options{
+	//		Bounds: image.Rect(255, 255, 2560, 1440),
+	//	}))
 	go SolidClient(wsys.NewClient(&shrew.Options{
 		Bounds: image.Rect(333, 333, 666, 666),
 	}))
-	go FrameClient(wsys.NewClient(&shrew.Options{
-		Bounds: image.Rect(500, 600, 1200, 800),
-	}))
+	//	go FrameClient(wsys.NewClient(&shrew.Options{
+	//		Bounds: image.Rect(500, 600, 1200, 800),
+	//	}))
 	client := wsys.NewClient(&shrew.Options{
-		Bounds: image.Rect(50, 50, 100, 100),
+		Bounds: image.Rect(50, 50, 640, 480),
 	})
 	W, K, M := client.W, client.K, client.M
 	var m shrew.Mouse
@@ -123,7 +127,8 @@ func main() {
 			}
 		case m = <-M:
 			fmt.Printf("%#v\n", m)
-			draw.Draw(W, image.ZR.Inset(-2).Add(m.Point), image.White, image.ZP, draw.Src)
+			W.Draw(image.ZR.Inset(-2).Add(m.Point), image.White, image.ZP, draw.Src)
+			W.Flush(image.ZR.Inset(-2).Add(m.Point))
 		}
 	}
 }
