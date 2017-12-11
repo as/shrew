@@ -3,13 +3,33 @@ package shrew
 import (
 	"image"
 	"log"
+	"sync"
 	"time"
-
-	"github.com/as/ui"
-	"golang.org/x/mobile/event/key"
-	"golang.org/x/mobile/event/mouse"
-	"golang.org/x/mobile/event/paint"
 )
+
+func (w *Wsys) merge(C ...<-chan Msg) <-chan Msg {
+	var wg sync.WaitGroup
+	out := make(chan Msg)
+
+	output := func(c <-chan Msg) {
+		for n := range c {
+			out <- n
+		}
+		wg.Done()
+	}
+	wg.Add(len(C))
+	for _, c := range C {
+		go output(c)
+	}
+
+	// Start a goroutine to close out once all the output goroutines are
+	// done.  This must start after the wg.Add call.
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+	return out
+}
 
 type Wsys struct {
 	// The window system has several independently executing clients, each of which has the same external
@@ -19,16 +39,20 @@ type Wsys struct {
 
 	M <-chan Mouse
 	K <-chan Kbd
+	C <-chan Msg
 	N chan *Options
 
-	Env []*Env
+	Env     []*Env
+	Nametab map[string]*Env
 }
 
 func NewWsys() *Wsys {
 	w := &Wsys{
-		N: make(chan *Options),
+		N:       make(chan *Options),
+		Nametab: make(map[string]*Env),
 	}
-	w.W, w.K, w.M = ShinyClient()
+	w.W = ShinyClient()
+	w.M, w.K = w.W.Mouse(), w.W.Kbd()
 	go w.prog()
 	return w
 }
@@ -39,11 +63,15 @@ func (w *Wsys) newWindow(opt *Options) *Env {
 		close(opt.reply)
 		return nil
 	}
+	bmp := w.W.AllocImage(opt.Bounds)
 	e := &Env{
-		W: w.W.SubImage(opt.Bounds).(Bitmap),
-		M: make(chan Mouse),
-		K: make(chan Kbd),
+		Sp: opt.Bounds.Min,
+		W:  bmp,
+		M:  make(chan Mouse),
+		K:  make(chan Kbd),
+		C:  make(chan Msg),
 	}
+	w.Nametab[opt.Name] = e
 	w.Env = append(w.Env, e)
 	return e
 }
@@ -51,15 +79,22 @@ func (w *Wsys) newWindow(opt *Options) *Env {
 func (w *Wsys) prog() {
 	for {
 		select {
-		//		case msg := <-w.CI:
-		// always v and from client 1
-		// a draw message that says "refresh"
-
+		case Msg := <-w.C:
+			if Msg.Kind == "move" {
+				w := w.Nametab[Msg.Name]
+				type Mover interface {
+					Move(sp image.Point)
+				}
+				Msg.Sp = Msg.Sp.Add(w.Sp)
+				w.W.(Mover).Move(Msg.Sp)
+				w.Sp = Msg.Sp
+			}
 		case opt := <-w.N:
 			e := w.newWindow(opt)
 			if e == nil {
 				continue
 			}
+			w.C = w.merge(w.C, e.C)
 			opt.reply <- e
 		case k := <-w.K:
 			for _, c := range w.Env {
@@ -67,9 +102,11 @@ func (w *Wsys) prog() {
 			}
 		case m := <-w.M:
 			for i, c := range w.Env {
+				m := m
+				m.Point = m.Point.Sub(c.Sp)
 				select {
 				case c.M <- m:
-				case <-time.After(time.Second):
+				case <-time.After(time.Second / 4):
 					log.Printf("client %d is slow\n", i)
 				}
 			}
@@ -78,6 +115,7 @@ func (w *Wsys) prog() {
 }
 
 type Options struct {
+	Name   string
 	Bounds image.Rectangle
 	reply  chan *Env
 }
@@ -85,6 +123,7 @@ type Options struct {
 func (w *Wsys) NewClient(opt *Options) *Client {
 	if opt == nil {
 		opt = &Options{
+			Name:   "unnamed",
 			Bounds: image.Rect(0, 0, 1, 1),
 		}
 	}
@@ -98,48 +137,6 @@ func (w *Wsys) NewClient(opt *Options) *Client {
 		W: e.W,
 		M: e.M,
 		K: e.K,
+		C: e.C,
 	}
-}
-
-//func allocimage(d Display, r image.Rectangle) draw.Image{
-//	return shinyallocimage(r)
-//}
-
-//func shinyallocimage(r image.Rectangle) draw.Image{
-///	return
-//}
-
-var dev *ui.Dev
-
-func ShinyClient() (Bitmap, <-chan Kbd, <-chan Mouse) {
-	dev, err := ui.Init(nil)
-	println(err)
-	w := dev.Window()
-	b := dev.NewBuffer(image.Pt(2560, 1440))
-	K := make(chan Kbd)
-	M := make(chan Mouse)
-	mstate := Mouse{}
-	go func() {
-		for {
-			switch e := w.NextEvent().(type) {
-			case mouse.Event:
-				if e.Direction == 1 {
-					mstate.Button |= 1 << uint(e.Button-1)
-				} else if e.Direction == 2 {
-					mstate.Button &^= 1 << uint(e.Button-1)
-				}
-				mstate.X = int(e.X)
-				mstate.Y = int(e.Y)
-				M <- mstate
-			case key.Event:
-				K <- Kbd(e.Rune)
-			case paint.Event:
-				w.Upload(b.Bounds().Min, b, b.Bounds())
-				w.Send(paint.Event{})
-			case interface{}:
-				println("unknown event")
-			}
-		}
-	}()
-	return Bitmap(b.RGBA()), K, M
 }
