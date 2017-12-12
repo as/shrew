@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/as/frame/font"
+	"github.com/as/memdraw"
 	"github.com/as/ui"
 	"github.com/golang/freetype/truetype"
 	"golang.org/x/exp/shiny/screen"
@@ -122,6 +123,11 @@ type Msg struct {
 	r        image.Rectangle
 	src      image.Image
 	sp       image.Point
+	pt0      image.Point
+	pt1      image.Point
+	pts      []image.Point
+	end0     int
+	end1     int
 	op       draw.Op
 	replyc   chan error
 	replyint chan int
@@ -129,6 +135,7 @@ type Msg struct {
 	ft       *font.Font
 	bg       image.Image
 	bgp      image.Point
+	thick    int
 }
 
 func (m *Msg) Canon(s *ShinyBitmap) {
@@ -162,6 +169,14 @@ func (s *ShinyBitmap) run() {
 		case Msg := <-s.ctl:
 			(&Msg).Canon(s)
 			switch Msg.kind {
+			case '1':
+				s.bezier(Msg.dst, Msg.pts, Msg.end0, Msg.end1, Msg.thick, Msg.src, Msg.sp)
+			case '2':
+				s.bspline(Msg.dst, Msg.pts, Msg.end0, Msg.end1, Msg.thick, Msg.src, Msg.sp)
+			case 'P':
+				s.poly(Msg.dst, Msg.pts, Msg.end0, Msg.end1, Msg.thick, Msg.src, Msg.sp)
+			case 'L':
+				s.line(Msg.dst, Msg.pt0, Msg.pt1, Msg.thick, Msg.src, Msg.sp)
 			case 'd', 'x':
 				if Msg.kind == 'd' {
 					draw.Draw(Msg.dst, Msg.r, Msg.src, Msg.sp, Msg.op)
@@ -176,6 +191,72 @@ func (s *ShinyBitmap) run() {
 			}
 		}
 	}
+}
+
+func (s *ShinyBitmap) Line(dst draw.Image, pt0, pt1 image.Point, thick int, src image.Image, sp image.Point) {
+	s.ctl <- Msg{
+		kind:  'L',
+		dst:   dst,
+		pt0:   pt0,
+		pt1:   pt1,
+		thick: thick,
+		src:   src,
+		sp:    sp,
+	}
+}
+
+func (s *ShinyBitmap) Bspline(dst draw.Image, pts []image.Point, end0, end1, thick int, src image.Image, sp image.Point) {
+	s.ctl <- Msg{
+		kind:  '2',
+		dst:   dst,
+		pts:   pts,
+		end0:  end0,
+		end1:  end1,
+		thick: thick,
+		src:   src,
+		sp:    sp,
+	}
+}
+
+func (s *ShinyBitmap) Bezier(dst draw.Image, pts []image.Point, end0, end1, thick int, src image.Image, sp image.Point) {
+	s.ctl <- Msg{
+		kind:  '1',
+		dst:   dst,
+		pts:   pts,
+		end0:  end0,
+		end1:  end1,
+		thick: thick,
+		src:   src,
+		sp:    sp,
+	}
+}
+
+func (s *ShinyBitmap) Poly(dst draw.Image, pts []image.Point, end0, end1, thick int, src image.Image, sp image.Point) {
+	s.ctl <- Msg{
+		kind:  'P',
+		dst:   dst,
+		pts:   pts,
+		end0:  end0,
+		end1:  end1,
+		thick: thick,
+		src:   src,
+		sp:    sp,
+	}
+}
+
+func (s *ShinyBitmap) bezier(dst draw.Image, p []image.Point, end0, end1, thick int, src image.Image, sp image.Point) {
+	memdraw.Bezier(dst, p[0], p[1], p[2], p[3], end0, end1, thick, src, sp)
+}
+func (s *ShinyBitmap) bspline(dst draw.Image, p []image.Point, end0, end1, thick int, src image.Image, sp image.Point) {
+	memdraw.Bezspline(dst, p[0], p[1], p[2], p[3], end0, end1, thick, src, sp)
+}
+
+func (s *ShinyBitmap) poly(dst draw.Image, p []image.Point, end0, end1, thick int, src image.Image, sp image.Point) {
+	memdraw.Poly(dst, p, end0, end1, thick, src, sp)
+}
+
+func (s *ShinyBitmap) line(dst draw.Image, pt0, pt1 image.Point, thick int, src image.Image, sp image.Point) {
+	memdraw.Line(dst, pt0, pt1, thick, src, sp)
 }
 
 func (s *ShinyBitmap) Bounds() image.Rectangle {

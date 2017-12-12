@@ -3,7 +3,6 @@ package main
 import (
 	"image"
 	"image/color"
-	"image/draw"
 	"os"
 	"time"
 	//	"time"
@@ -21,20 +20,29 @@ func FrameClient(c *shrew.Client) {
 	tick := time.NewTicker(time.Second / 64)
 	spin := byte(0)
 	mp := image.ZP
-	for {
-		select {
-		case m := <-c.M:
+	go func() {
+		for m := range c.M {
 			mp = m.Point
 			i := fr.IndexOf(mp)
 			fr.Select(i, i)
 			c.W.Flush(image.ZR.Inset(-555))
+
 			if m.Button == 1 {
-				c.C <- shrew.Msg{
-					Name: "frame",
-					Kind: "move",
-					Sp:   m.Point,
+				start := m.Point
+				for m.Button == 1 {
+					c.C <- shrew.Msg{
+						Name: "frame",
+						Kind: "move",
+						Sp:   m.Point.Sub(start),
+					}
+					m = <-c.M
+					c.W.Flush(image.ZR.Inset(-555))
 				}
 			}
+		}
+	}()
+	for {
+		select {
 		case <-tick.C:
 			fr.Insert([]byte(mp.String()+"\n"), 0)
 			spin++
@@ -110,12 +118,26 @@ var rb = image.NewUniform(rainbow)
 func SolidClient(c *shrew.Client) {
 	//col := rainbow
 	//tick := time.NewTicker(time.Second / 2)
+	pt0 := image.ZP
+	pt0 = pt0
+	var bpts [4]image.Point
+	bn := 0
+	bn = bn
 	for {
 		select {
 		case m := <-c.M:
 			m = m
-			c.W.Draw(c.W, c.W.Bounds(), rb, image.ZP, draw.Src)
-			c.W.Flush(c.W.Bounds())
+			//c.W.Draw(c.W, c.W.Bounds(), rb, image.ZP, draw.Src)
+			if m.Button == 1 {
+			}
+			if m.Button == 1<<1 {
+				//c.W.Line(c.W, m.Point, pt0, 10, image.Black, image.ZP)
+				//c.W.Line(c.W, pt0, m.Point, 1, image.NewUniform(color.RGBA{1,1,32,32}), image.ZP)
+				copy(bpts[:], bpts[1:])
+				bpts[3] = m.Point
+				c.W.Bspline(c.W, bpts[:], 0, 0, 1, image.NewUniform(color.RGBA{255, 255, 255, 255}), image.ZP)
+				c.W.Flush(c.W.Bounds())
+			}
 		case k := <-c.K:
 			switch byte(k.Rune) {
 			default:
@@ -159,18 +181,18 @@ func main() {
 	//	go Spline(wsys.NewClient(&shrew.Options{
 	//			Bounds: image.Rect(255, 255, 2560, 1440),
 	//		}))
-	//go SolidClient(wsys.NewClient(&shrew.Options{
-	//	Bounds: image.Rect(111, 1111, 555, 555),
-	//}))
-	go FrameClient(wsys.NewClient(&shrew.Options{
-		Name:   "frame",
-		Bounds: image.Rect(500, 600, 1200, 800),
+	go SolidClient(wsys.NewClient(&shrew.Options{
+		Bounds: image.Rect(0, 0, 1200, 800),
 	}))
+	//		go FrameClient(wsys.NewClient(&shrew.Options{
+	//			Name: "frame",
+	//			Bounds: image.Rect(500, 600, 1200, 800),
+	//		}))
 	client := wsys.NewClient(&shrew.Options{
 		Bounds: image.Rect(1, 1, 500, 500),
 	})
 	W, K, M := client.W, client.K, client.M
-	tick := time.NewTicker(time.Second / 64)
+	//	tick := time.NewTicker(time.Second / 64)
 	ft := font.NewGoMono(33)
 	for {
 		select {
@@ -186,11 +208,11 @@ func main() {
 			W.Flush(image.ZR.Inset(-5).Add(m.Point))
 			//W = W
 			m = m
-		case <-tick.C:
-			W.Draw(W, image.Rect(200, 200, 900, 300), image.White, image.ZP, draw.Src)
-			tm := []byte(time.Now().String())
-			W.StringBG(W, image.Pt(200, 200), rb, image.ZP, ft, tm, image.Black, image.ZP)
-			W.Flush(image.ZR.Inset(-5555))
+			//		case <-tick.C:
+			//			W.Draw(W, image.Rect(200, 200, 900, 300), image.White, image.ZP, draw.Src)
+			//			tm := []byte(time.Now().String())
+			//				W.StringBG(W, image.Pt(200, 200), rb, image.ZP, ft, tm, image.Black, image.ZP)
+			//			W.Flush(image.ZR.Inset(-5555))
 		default:
 			next()
 			rb = image.NewUniform(rainbow)

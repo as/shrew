@@ -16,8 +16,12 @@ type Screen interface {
 type Bitmap interface {
 	draw.Image
 	Draw(dst draw.Image, r image.Rectangle, src image.Image, sp image.Point, op draw.Op)
+	Line(dst draw.Image, pt0, pt1 image.Point, thick int, src image.Image, sp image.Point)
 	StringBG(dst draw.Image, p image.Point, src image.Image, sp image.Point, ft *font.Font, s []byte, bg image.Image, bgp image.Point) int
 	Flush(r image.Rectangle) error
+	Bezier(dst draw.Image, pts []image.Point, end0, end1, thick int, src image.Image, sp image.Point)
+	Poly(dst draw.Image, pts []image.Point, end0, end1, thick int, src image.Image, sp image.Point)
+	Bspline(dst draw.Image, pts []image.Point, end0, end1, thick int, src image.Image, sp image.Point)
 }
 type Mouse struct {
 	Button int
