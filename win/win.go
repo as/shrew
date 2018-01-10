@@ -2,7 +2,6 @@ package win
 
 import (
 	"image"
-	"image/color"
 	"image/draw"
 
 	"github.com/as/frame"
@@ -102,73 +101,3 @@ func (w *Win) Refresh() {
 func (w *Win) Bytes() []byte {
 	return w.Editor.Bytes()
 }
-
-func (w *Win) Clicksb(pt image.Point, dir int) {
-	w.clicksb(pt, dir)
-	w.drawsb()
-
-}
-func region5(r0, r1, q0, q1 int) int {
-	{
-		r0 := int64(r0)
-		r1 := int64(r1)
-		q0 := int64(q0)
-		q1 := int64(q1)
-		return text.Region5(r0, r1, q0, q1)
-	}
-}
-
-func clamp32(v, l, h int) int {
-	if v < l {
-		return l
-	}
-	if v > h {
-		return h
-	}
-	return v
-}
-
-func clamp(v, l, h int64) int64 {
-	if v < l {
-		return l
-	}
-	if v > h {
-		return h
-	}
-	return v
-}
-
-func min(a, b int64) int64 {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int64) int64 {
-	if a > b {
-		return a
-	}
-	return b
-}
-func drawBorder(dst draw.Image, r image.Rectangle, src image.Image, sp image.Point, thick int) {
-	draw.Draw(dst, image.Rect(r.Min.X, r.Min.Y, r.Max.X, r.Min.Y+thick), src, sp, draw.Src)
-	draw.Draw(dst, image.Rect(r.Min.X, r.Max.Y-thick, r.Max.X, r.Max.Y), src, sp, draw.Src)
-	draw.Draw(dst, image.Rect(r.Min.X, r.Min.Y, r.Min.X+thick, r.Max.Y), src, sp, draw.Src)
-	draw.Draw(dst, image.Rect(r.Max.X-thick, r.Min.Y, r.Max.X, r.Max.Y), src, sp, draw.Src)
-}
-
-// Put
-
-var (
-	Red    = image.NewUniform(color.RGBA{255, 0, 0, 255})
-	Green  = image.NewUniform(color.RGBA{255, 255, 192, 25})
-	Blue   = image.NewUniform(color.RGBA{0, 192, 192, 255})
-	Cyan   = image.NewUniform(color.RGBA{234, 255, 255, 255})
-	White  = image.NewUniform(color.RGBA{255, 255, 255, 255})
-	Yellow = image.NewUniform(color.RGBA{255, 255, 224, 255})
-	X      = image.NewUniform(color.RGBA{255 - 32, 255 - 32, 224 - 32, 255})
-	LtGray = image.NewUniform(color.RGBA{66*2 + 25, 66*2 + 25, 66*2 + 35, 255})
-	Gray   = image.NewUniform(color.RGBA{66, 66, 66, 255})
-	Mauve  = image.NewUniform(color.RGBA{0x99, 0x99, 0xDD, 255})
-)
