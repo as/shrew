@@ -22,20 +22,20 @@ type Win struct {
 	buffer   bool
 }
 
-type Options struct {
+type Config struct {
 	Pad    image.Point
 	Font   *font.Font
 	Color  frame.Color
 	Editor text.Editor
 }
 
-var defaultOptions = Options{
+var defaultOptions = Config{
 	Pad:   image.Pt(15, 15),
 	Font:  font.NewGoMono(11),
 	Color: frame.Mono,
 }
 
-func New(c *shrew.Client, opt *Options) *Win {
+func New(c *shrew.Client, opt *Config) *Win {
 	if opt == nil {
 		opt = &defaultOptions
 	}
