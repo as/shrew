@@ -31,7 +31,7 @@ func (s *ShinyScreen) AllocImage(r image.Rectangle) Bitmap {
 		size: r.Size(),
 		b:    b,
 		w:    s.dev.Window(),
-		ctl:  make(chan Msg, 11),
+		ctl:  make(chan Msg),
 		ctl2: make(chan Msg),
 	}
 	go bmp.run()
@@ -48,7 +48,7 @@ func ShinyClient() *ShinyScreen {
 	}
 	w := dev.Window()
 	K := make(chan Kbd, 25)
-	M := make(chan Mouse, 25)
+	M := make(chan Mouse, 50)
 	sc := &ShinyScreen{
 		dev: dev,
 		K:   K,
@@ -61,6 +61,17 @@ func ShinyClient() *ShinyScreen {
 		for {
 			switch e := w.NextEvent().(type) {
 			case mouse.Event:
+
+				// Some silly operating system though it would
+				// be clever to send an event for a step of a mouse
+				// wheel. We fix that here.
+				if e.Button < 0 {
+					e.Button = -e.Button + 3
+					mstate.Button |= 1 << uint(e.Button-1)
+					M <- mstate
+					mstate.Button &^= 1 << uint(e.Button-1)
+					continue
+				}
 				if e.Direction == 1 {
 					mstate.Button |= 1 << uint(e.Button-1)
 				} else if e.Direction == 2 {
@@ -121,6 +132,7 @@ type Msg struct {
 	dst      draw.Image
 	p        image.Point
 	r        image.Rectangle
+	rs       []image.Rectangle
 	src      image.Image
 	sp       image.Point
 	pt0      image.Point
@@ -185,9 +197,17 @@ func (s *ShinyBitmap) run() {
 					//s.drawBytes(msg.dst, msg.sp, msg.src, msg.data)
 				}
 			case 'f':
-				r := Msg.r
-				dp := s.sp.Add(r.Min)
-				s.w.Upload(dp, s.b, r)
+				var wg sync.WaitGroup
+				wg.Add(len(Msg.rs))
+				for _, r := range Msg.rs {
+					r := r
+					dp := s.sp.Add(r.Min)
+					go func() {
+						s.w.Upload(dp, s.b, r)
+						wg.Done()
+					}()
+				}
+				wg.Wait()
 			}
 		}
 	}
@@ -303,10 +323,13 @@ func (s *ShinyBitmap) StringBG(dst draw.Image, p image.Point, src image.Image, s
 	return <-replyint
 }
 
-func (s *ShinyBitmap) Flush(r image.Rectangle) error {
+func (s *ShinyBitmap) Flush(r ...image.Rectangle) error {
+	if len(r) == 0 {
+		return nil
+	}
 	s.ctl <- Msg{
 		kind: 'f',
-		r:    r,
+		rs:   r,
 	}
 	return nil
 }

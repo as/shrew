@@ -67,7 +67,7 @@ func (w *Wsys) newWindow(opt *Options) *Env {
 	e := &Env{
 		Sp: opt.Bounds.Min,
 		W:  bmp,
-		M:  make(chan Mouse),
+		M:  make(chan Mouse, 50),
 		K:  make(chan Kbd),
 		C:  make(chan Msg),
 	}
@@ -106,8 +106,18 @@ func (w *Wsys) prog() {
 				m.Point = m.Point.Sub(c.Sp)
 				select {
 				case c.M <- m:
-				case <-time.After(time.Second / 4):
+					if cap(c.M)/4 < len(c.M) {
+						for cap(c.M)/7 < len(c.M) {
+							<-c.M
+						}
+					}
+				case <-time.After(time.Second / 32):
 					log.Printf("client %d is slow\n", i)
+					if cap(c.M)/4 < len(c.M) {
+						for cap(c.M)/7 < len(c.M) {
+							<-c.M
+						}
+					}
 				}
 			}
 		}
