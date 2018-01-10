@@ -1,8 +1,6 @@
 package win
 
 import (
-	"io"
-
 	"github.com/as/text"
 )
 

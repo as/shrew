@@ -1,8 +1,6 @@
 package win
 
 import (
-	"io"
-
 	"github.com/as/text"
 )
 
@@ -23,4 +21,3 @@ func (w *Win) Select(q0, q1 int64) {
 		//w.Untick()	// TODO(as): win.exe cursor disappeared when this was uncommented
 	}
 }
-

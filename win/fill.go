@@ -1,11 +1,5 @@
 package win
 
-import (
-	"io"
-
-	"github.com/as/text"
-)
-
 func (w *Win) Fill() {
 	if w.Frame.Full() {
 		return
@@ -35,4 +29,3 @@ func (w *Win) Fill() {
 	}
 	w.Flush()
 }
-
