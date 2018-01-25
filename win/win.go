@@ -11,7 +11,7 @@ import (
 )
 
 type Win struct {
-	c *shrew.Client
+	c *shrew.client
 	*frame.Frame
 	text.Editor
 	ScrollBar
@@ -35,7 +35,7 @@ var defaultOptions = Config{
 	Color: frame.Mono,
 }
 
-func New(c *shrew.Client, opt *Config) *Win {
+func New(c *shrew.client, opt *Config) *Win {
 	if opt == nil {
 		opt = &defaultOptions
 	}

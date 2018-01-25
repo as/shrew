@@ -13,6 +13,7 @@ import (
 	"github.com/as/frame"
 	"github.com/as/frame/font"
 	"github.com/as/shrew"
+	. "github.com/as/shrew/win"
 )
 
 var (
@@ -20,7 +21,7 @@ var (
 	updateC = make(chan []byte)
 )
 
-func WinClient(c *shrew.Client) {
+func WinClient(c shrew.Client) {
 	w := New(c, nil)
 	go func() {
 		var (
@@ -29,7 +30,7 @@ func WinClient(c *shrew.Client) {
 			i        int
 			lastdata string
 		)
-		for m = range c.M {
+		for m = range c.M() {
 			if !m.Point.In(c.W.Bounds()) {
 				data := string(w.Bytes())
 				if data != lastdata {
@@ -121,7 +122,7 @@ type winmsg struct {
 // Sends a message to the window system for a request to move. The window system
 // send the request to the bitmap.
 // haven't updated the frame package yet...
-func FrameClient(c *shrew.Client) {
+func FrameClient(c shrew.client) {
 	r := image.Rectangle{image.ZP, c.W.Bounds().Size()}
 	fr := frame.NewDrawer(r.Inset(5), font.NewGoMono(12), c.W, frame.A, c.W)
 	mp := image.ZP
@@ -225,7 +226,7 @@ type P struct {
 func (p *P) Point() image.Point {
 	return image.Pt(int(p.X+0.5), int(p.Y+0.5))
 }
-func SolidClient(c *shrew.Client) {
+func SolidClient(c shrew.client) {
 	//col := rainbow
 	//tick := time.NewTicker(time.Second / 2)
 	pt0 := image.ZP

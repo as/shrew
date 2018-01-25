@@ -2,12 +2,11 @@ package shrew
 
 import (
 	"image"
-	"log"
+	"image/draw"
 	"sync"
-	"time"
 )
 
-func (w *Wsys) merge(C ...<-chan Msg) <-chan Msg {
+func (w *wsys) merge(C ...<-chan Msg) <-chan Msg {
 	var wg sync.WaitGroup
 	out := make(chan Msg)
 
@@ -31,7 +30,7 @@ func (w *Wsys) merge(C ...<-chan Msg) <-chan Msg {
 	return out
 }
 
-type Wsys struct {
+type wsys struct {
 	// The window system has several independently executing clients, each of which has the same external
 	// specification. It multiplexes a screen, mouse, and keyboard for its clients and therefore has a type reminiscent
 	// of the clients themselves:
@@ -46,8 +45,8 @@ type Wsys struct {
 	Nametab map[string]*Env
 }
 
-func NewWsys() *Wsys {
-	w := &Wsys{
+func NewWsys() Wsys {
+	w := &wsys{
 		N:       make(chan *Options),
 		Nametab: make(map[string]*Env),
 	}
@@ -57,7 +56,7 @@ func NewWsys() *Wsys {
 	return w
 }
 
-func (w *Wsys) newWindow(opt *Options) *Env {
+func (w *wsys) newWindow(opt *Options) *Env {
 	if !opt.Bounds.In(w.W.Bounds()) {
 		println("bad bounds requested by client")
 		close(opt.reply)
@@ -67,7 +66,7 @@ func (w *Wsys) newWindow(opt *Options) *Env {
 	e := &Env{
 		Sp: opt.Bounds.Min,
 		W:  bmp,
-		M:  make(chan Mouse, 50),
+		M:  make(chan Mouse),
 		K:  make(chan Kbd),
 		C:  make(chan Msg),
 	}
@@ -76,18 +75,22 @@ func (w *Wsys) newWindow(opt *Options) *Env {
 	return e
 }
 
-func (w *Wsys) prog() {
+func (w *wsys) prog() {
+	var m Mouse
 	for {
 		select {
 		case Msg := <-w.C:
 			if Msg.Kind == "move" {
-				w := w.Nametab[Msg.Name]
+				w0 := w.Nametab[Msg.Name]
 				type Mover interface {
 					Move(sp image.Point)
 				}
-				Msg.Sp = Msg.Sp.Add(w.Sp)
-				w.W.(Mover).Move(Msg.Sp)
-				w.Sp = Msg.Sp
+				//w.W.Draw(w.W, w0.W.Bounds(), BG, image.ZP, draw.Src)
+				Msg.Sp = Msg.Sp.Add(w0.Sp)
+				w0.W.(Mover).Move(Msg.Sp)
+				w0.Sp = Msg.Sp
+				drawBorder(w0.W, w0.W.Bounds(), image.Black, image.ZP, 1)
+				w0.W.Flush(w0.W.Bounds())
 			}
 		case opt := <-w.N:
 			e := w.newWindow(opt)
@@ -98,30 +101,34 @@ func (w *Wsys) prog() {
 			opt.reply <- e
 		case k := <-w.K:
 			for _, c := range w.Env {
+				r := c.W.Bounds().Add(c.Sp)
+				if !m.Point.In(r) {
+					continue
+				}
 				c.K <- k
 			}
-		case m := <-w.M:
-			for i, c := range w.Env {
+		case m = <-w.M:
+			for _, c := range w.Env {
+				r := c.W.Bounds().Add(c.Sp)
+				if !m.Point.In(r) {
+					continue
+				}
 				m := m
-				m.Point = m.Point.Sub(c.Sp)
+				m.Point = m.Point.Sub(r.Min)
 				select {
 				case c.M <- m:
-					if cap(c.M)/4 < len(c.M) {
-						for cap(c.M)/7 < len(c.M) {
-							<-c.M
-						}
-					}
-				case <-time.After(time.Second / 32):
-					log.Printf("client %d is slow\n", i)
-					if cap(c.M)/4 < len(c.M) {
-						for cap(c.M)/7 < len(c.M) {
-							<-c.M
-						}
-					}
+				default:
 				}
 			}
 		}
 	}
+}
+
+func drawBorder(dst draw.Image, r image.Rectangle, src image.Image, sp image.Point, thick int) {
+	draw.Draw(dst, image.Rect(r.Min.X, r.Min.Y, r.Max.X, r.Min.Y+thick), src, sp, draw.Src)
+	draw.Draw(dst, image.Rect(r.Min.X, r.Max.Y-thick, r.Max.X, r.Max.Y), src, sp, draw.Src)
+	draw.Draw(dst, image.Rect(r.Min.X, r.Min.Y, r.Min.X+thick, r.Max.Y), src, sp, draw.Src)
+	draw.Draw(dst, image.Rect(r.Max.X-thick, r.Min.Y, r.Max.X, r.Max.Y), src, sp, draw.Src)
 }
 
 type Options struct {
@@ -130,7 +137,7 @@ type Options struct {
 	reply  chan *Env
 }
 
-func (w *Wsys) NewClient(opt *Options) *Client {
+func (w *wsys) NewClient(opt *Options) Client {
 	if opt == nil {
 		opt = &Options{
 			Name:   "unnamed",
@@ -143,10 +150,11 @@ func (w *Wsys) NewClient(opt *Options) *Client {
 	if e == nil {
 		return nil
 	}
-	return &Client{
-		W: e.W,
-		M: e.M,
-		K: e.K,
-		C: e.C,
+	return &client{
+		name:   opt.Name,
+		Bitmap: e.W,
+		m:      e.M,
+		k:      e.K,
+		c:      e.C,
 	}
 }

@@ -13,7 +13,7 @@ import (
 )
 
 type Win struct {
-	c *shrew.Client
+	c shrew.Client
 	*frame.Frame
 	text.Editor
 	ScrollBar
@@ -60,7 +60,7 @@ func (c *cacher) Flush(r ...image.Rectangle) error {
 	return nil
 }
 
-func New(c *shrew.Client, opt *Options) *Win {
+func New(c shrew.Client, opt *Options) *Win {
 	if opt == nil {
 		opt = &defaultOptions
 	}

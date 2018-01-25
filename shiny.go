@@ -6,14 +6,22 @@ import (
 	"image/draw"
 	"sync"
 
-	"github.com/as/frame/font"
+	"golang.org/x/image/font"
+	"golang.org/x/image/math/fixed"
+
+	"github.com/as/frame"
 	"github.com/as/memdraw"
+	"github.com/as/shiny/screen"
 	"github.com/as/ui"
 	"github.com/golang/freetype/truetype"
-	"golang.org/x/exp/shiny/screen"
+	//	"golang.org/x/exp/shiny/screen"
 	"golang.org/x/mobile/event/key"
 	"golang.org/x/mobile/event/mouse"
 	"golang.org/x/mobile/event/paint"
+)
+
+var (
+	noCrappyOptimizations = false
 )
 
 type ShinyScreen struct {
@@ -27,12 +35,14 @@ type ShinyScreen struct {
 func (s *ShinyScreen) AllocImage(r image.Rectangle) Bitmap {
 	b := s.dev.NewBuffer(r.Size())
 	bmp := &ShinyBitmap{
-		sp:   r.Min,
-		size: r.Size(),
-		b:    b,
-		w:    s.dev.Window(),
-		ctl:  make(chan Msg),
-		ctl2: make(chan Msg),
+		sp:        r.Min,
+		size:      r.Size(),
+		b:         b,
+		w:         s.dev.Window(),
+		ctl:       make(chan Msg),
+		ctl2:      make(chan Msg),
+		stringBGC: make(chan txStringBG),
+		replyint:  make(chan int),
 	}
 	go bmp.run()
 	return bmp
@@ -41,21 +51,32 @@ func (s *ShinyScreen) Bounds() image.Rectangle { return image.Rect(0, 0, 2500, 1
 func (s *ShinyScreen) Kbd() chan Kbd           { return s.K }
 func (s *ShinyScreen) Mouse() chan Mouse       { return s.M }
 
+/*
+CodeLeftControl  Code = 224
+CodeLeftShift    Code = 225
+CodeLeftAlt      Code = 226
+CodeLeftGUI      Code = 227
+CodeRightControl Code = 228
+CodeRightShift   Code = 229
+CodeRightAlt     Code = 230
+CodeRightGUI     Code = 231
+*/
+
 func ShinyClient() *ShinyScreen {
 	dev, err := ui.Init(nil)
 	if err != nil {
 		panic(err)
 	}
 	w := dev.Window()
-	K := make(chan Kbd, 25)
-	M := make(chan Mouse, 50)
+	K := make(chan Kbd, 1)
+	M := make(chan Mouse, 1)
 	sc := &ShinyScreen{
 		dev: dev,
 		K:   K,
 		M:   M,
 	}
 	sc.fontinit()
-	//sc.Bitmap = sc.AllocImage(image.Rect(0, 0, 1024, 768))
+	sc.Bitmap = sc.AllocImage(sc.Bounds())
 	mstate := Mouse{}
 	go func() {
 		for {
@@ -81,9 +102,13 @@ func ShinyClient() *ShinyScreen {
 				mstate.Y = int(e.Y)
 				M <- mstate
 			case key.Event:
+				if e.Code == key.CodeRightShift || e.Code == key.CodeLeftShift {
+					continue
+				}
 				press := 0
 				if e.Direction == 1 || e.Direction == 0 {
 					press = 1
+
 				}
 				if e.Rune == 13 {
 					e.Rune = 10
@@ -101,15 +126,17 @@ func ShinyClient() *ShinyScreen {
 }
 
 type ShinyBitmap struct {
-	sp      image.Point
-	size    image.Point
-	b       screen.Buffer
-	w       screen.Window
-	ctl     chan Msg // for drawing
-	ctl2    chan Msg // for wsys
-	wg      sync.WaitGroup
-	refresh chan Msg
-	draw    chan Msg
+	sp        image.Point
+	size      image.Point
+	b         screen.Buffer
+	w         screen.Window
+	ctl       chan Msg // for drawing
+	ctl2      chan Msg // for wsys
+	stringBGC chan txStringBG
+	wg        sync.WaitGroup
+	refresh   chan Msg
+	draw      chan Msg
+	replyint  chan int
 	//ff      font.Face
 }
 
@@ -123,28 +150,39 @@ func (s *ShinyBitmap) ColorModel() color.Model {
 	return s.b.RGBA().ColorModel()
 }
 
+type txStringBG struct {
+	dst  draw.Image
+	p    image.Point
+	src  image.Image
+	sp   image.Point
+	ft   font.Face
+	data []byte
+	bg   image.Image
+	bgp  image.Point
+}
+
 type Msg struct {
 	string
-	Kind     string
-	Sp       image.Point
-	Name     string
-	kind     byte
-	dst      draw.Image
-	p        image.Point
-	r        image.Rectangle
-	rs       []image.Rectangle
-	src      image.Image
-	sp       image.Point
-	pt0      image.Point
-	pt1      image.Point
-	pts      []image.Point
-	end0     int
-	end1     int
-	op       draw.Op
-	replyc   chan error
+	Kind string
+	Sp   image.Point
+	Name string
+	kind byte
+	dst  draw.Image
+	p    image.Point
+	r    image.Rectangle
+	rs   []image.Rectangle
+	src  image.Image
+	sp   image.Point
+	pt0  image.Point
+	pt1  image.Point
+	pts  []image.Point
+	end0 int
+	end1 int
+	op   draw.Op
+	//	replyc   chan error
 	replyint chan int
 	data     []byte
-	ft       *font.Font
+	ft       font.Face
 	bg       image.Image
 	bgp      image.Point
 	thick    int
@@ -169,11 +207,19 @@ func (s *ShinyBitmap) Move(sp image.Point) {
 	}
 }
 
-func (s *ShinyBitmap) run() {
-	draw.Draw(s.b.RGBA(), s.b.Bounds(), image.NewUniform(color.RGBA{77, 77, 77, 255}), image.ZP, draw.Src)
+var BG = image.NewUniform(color.RGBA{77, 77, 77, 255})
+
+func (s *ShinyBitmap) BG() {
+	draw.Draw(s.b.RGBA(), s.b.Bounds(), BG, image.ZP, draw.Src)
 	s.w.Upload(s.sp, s.b, s.b.Bounds())
+}
+
+func (s *ShinyBitmap) run() {
+	s.BG()
 	for {
 		select {
+		case Msg := <-s.stringBGC:
+			s.replyint <- s.stringBG2(&Msg)
 		case Msg := <-s.ctl2:
 			if Msg.string == "move" {
 				s.sp = Msg.sp
@@ -181,6 +227,10 @@ func (s *ShinyBitmap) run() {
 		case Msg := <-s.ctl:
 			(&Msg).Canon(s)
 			switch Msg.kind {
+			case 'd':
+				draw.Draw(Msg.dst, Msg.r, Msg.src, Msg.sp, Msg.op)
+			case 'x':
+				Msg.replyint <- s.stringBG(Msg.dst, Msg.p, Msg.src, Msg.sp, Msg.ft, Msg.data, Msg.bg, Msg.bgp)
 			case '1':
 				s.bezier(Msg.dst, Msg.pts, Msg.end0, Msg.end1, Msg.thick, Msg.src, Msg.sp)
 			case '2':
@@ -189,14 +239,11 @@ func (s *ShinyBitmap) run() {
 				s.poly(Msg.dst, Msg.pts, Msg.end0, Msg.end1, Msg.thick, Msg.src, Msg.sp)
 			case 'L':
 				s.line(Msg.dst, Msg.pt0, Msg.pt1, Msg.thick, Msg.src, Msg.sp)
-			case 'd', 'x':
-				if Msg.kind == 'd' {
-					draw.Draw(Msg.dst, Msg.r, Msg.src, Msg.sp, Msg.op)
-				} else {
-					Msg.replyint <- s.stringBG(Msg.dst, Msg.p, Msg.src, Msg.sp, Msg.ft, Msg.data, Msg.bg, Msg.bgp)
-					//s.drawBytes(msg.dst, msg.sp, msg.src, msg.data)
-				}
 			case 'f':
+				if noCrappyOptimizations {
+					s.w.Upload(s.sp, s.b, s.b.Bounds())
+					continue
+				}
 				var wg sync.WaitGroup
 				wg.Add(len(Msg.rs))
 				for _, r := range Msg.rs {
@@ -302,25 +349,87 @@ func (s *ShinyBitmap) DrawBytes(dst draw.Image, dot image.Point, src image.Image
 	}
 }
 
-func (s *ShinyBitmap) stringBG(dst draw.Image, p image.Point, src image.Image, sp image.Point, ft *font.Font, data []byte, bg image.Image, bgp image.Point) int {
-	return font.StringBG(dst, p, src, sp, ft, data, bg, bgp)
+func (z *ShinyBitmap) stringBG2(o *txStringBG) int {
+	dst, p, ft, s, src, sp, bg, bgp := o.dst, o.p, o.ft, o.data, o.src, o.sp, o.bg, o.bgp
+
+	if ft, ok := ft.(StaticFace); ok && bg != nil {
+		return staticStringBG(z.b.RGBA(), p, ft, s, src.(*image.Uniform).C, bg.(*image.Uniform).C)
+	}
+	p.Y += frame.Ascent(ft)
+	for _, b := range s {
+		dr, mask, maskp, advance, ok := ft.Glyph(fixed.P(p.X, p.Y), rune(b))
+		if !ok {
+			//panic("RuneBG")
+		}
+		if bg != nil {
+			draw.Draw(dst, dr, bg, bgp, draw.Src)
+		}
+		draw.DrawMask(dst, dr, src, sp, mask, maskp, draw.Over)
+		p.X += frame.Fix(advance)
+	}
+	return p.X
 }
 
-func (s *ShinyBitmap) StringBG(dst draw.Image, p image.Point, src image.Image, sp image.Point, ft *font.Font, data []byte, bg image.Image, bgp image.Point) int {
-	replyint := make(chan int)
-	s.ctl <- Msg{
-		kind:     'x',
-		dst:      dst,
-		p:        p,
-		src:      src,
-		sp:       p,
-		ft:       ft,
-		data:     data,
-		bg:       bg,
-		bgp:      bgp,
-		replyint: replyint,
+func (*ShinyBitmap) stringBG(dst draw.Image, p image.Point, src image.Image, sp image.Point, ft font.Face, s []byte, bg image.Image, bgp image.Point) int {
+	if ft, ok := ft.(StaticFace); ok {
+		if bg, ok := bg.(*image.Uniform); ok {
+			if bg, ok := bg.C.(color.RGBA); ok {
+				return staticStringBG(dst, p, ft, s, src.(*image.Uniform).C.(color.RGBA), bg)
+			}
+		}
 	}
-	return <-replyint
+	p.Y += frame.Ascent(ft)
+	for _, b := range s {
+		dr, mask, maskp, advance, ok := ft.Glyph(fixed.P(p.X, p.Y), rune(b))
+		if !ok {
+			//panic("RuneBG")
+		}
+		//draw.Draw(dst, dr, bg, bgp, draw.Src)
+		draw.DrawMask(dst, dr, src, sp, mask, maskp, draw.Over)
+		p.X += frame.Fix(advance)
+		if len(s)-1 == 0 {
+			break
+		}
+		s = s[1:]
+	}
+	return p.X
+}
+
+func staticStringBG(dst draw.Image, p image.Point, ft StaticFace, s []byte, fg, bg color.Color) int {
+	//p.Y += frame.Ascent(ft)
+	r := image.Rectangle{p, p}
+	r.Max.Y += frame.Dy(ft)
+	for _, b := range s {
+		img := ft.RawGlyph(b, fg, bg)
+		dx := img.Bounds().Dx()
+		r.Max.X += dx
+		draw.Draw(dst, r, img, img.Bounds().Min, draw.Src)
+		r.Min.X += dx //img.Bounds().Dx() //+ ft.stride //Add(image.Pt(img.Bounds().Dx(), 0))
+	}
+	return r.Min.X
+}
+
+type StaticFace interface {
+	font.Face
+	RawGlyph(b byte, fg, bg color.Color) image.Image
+}
+
+func (s *ShinyBitmap) StringBG(dst draw.Image, p image.Point, src image.Image, sp image.Point, ft font.Face, data []byte, bg image.Image, bgp image.Point) int {
+	s.stringBGC <- txStringBG{dst, p, src, sp, ft, data, bg, bgp}
+	return <-s.replyint
+	//	s.ctl <- Msg{
+	//		kind:     'x',
+	//		dst:      dst,
+	//		p:        p,
+	//		src:      src,
+	//		sp:       p,
+	//		ft:       ft,
+	///		data:     data,
+	//		bg:       bg,
+	//		bgp:      bgp,
+	//		replyint: replyint,
+	//	}
+	//	return <-replyint
 }
 
 func (s *ShinyBitmap) Flush(r ...image.Rectangle) error {

@@ -19,7 +19,7 @@ var (
 	conout  = make(chan []byte)
 )
 
-func WinClient(c *shrew.Client) {
+func WinClient(c *shrew.client) {
 	q2 := int64(0)
 	w := New(c, nil)
 	w.Flush(c.W.Bounds())
@@ -156,7 +156,6 @@ func WinClient(c *shrew.Client) {
 				}
 				if s == "\n" {
 					str := string(w.Bytes()[q2:q0])
-					log.Printf("%q\n", str)
 					conin <- []byte(str)
 					q2 = q0 - 1
 				}

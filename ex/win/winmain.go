@@ -20,7 +20,7 @@ var (
 	conout  = make(chan []byte)
 )
 
-func WinClient(c *shrew.Client) {
+func WinClient(c *shrew.client) {
 	q2 := int64(0)
 	w := New(c, nil)
 	w.Flush(c.W.Bounds())
@@ -70,11 +70,8 @@ func WinClient(c *shrew.Client) {
 					println(err)
 				}
 				go func() {
-					log.Println("wg.Wait()")
 					wg.Wait()
-					log.Println("done")
 					close(donec)
-					log.Println("waiting")
 					cmd.Wait()
 				}()
 			Loop:
@@ -195,7 +192,6 @@ func WinClient(c *shrew.Client) {
 				if s == "\n" && q2 < q0 {
 					str := string(w.Bytes()[q2:q0])
 					q2++
-					log.Printf("%q\n", str)
 					if len(str) > 1 && str[len(str)-1] == '\n' {
 						str = str[:len(str)-1]
 						q2++
